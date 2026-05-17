@@ -12,7 +12,9 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  BarController,
+  LineController
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 
@@ -25,7 +27,9 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  BarController,
+  LineController
 );
 
 function ProfitLoss() {
