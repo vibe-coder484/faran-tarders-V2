@@ -112,6 +112,14 @@ function Login() {
           </button>
         </form>
 
+        <div className="mt-6 bg-indigo-50/80 border border-indigo-100 p-4 rounded-2xl text-center animate-[slideUp_0.8s_ease-out]">
+          <p className="text-sm text-indigo-800 font-semibold mb-1">For login use</p>
+          <div className="text-sm text-indigo-600 font-medium space-y-1">
+            <p>Email: <span className="font-bold text-indigo-700 select-all">admin@gmail.com</span></p>
+            <p>Password: <span className="font-bold text-indigo-700 select-all">admin123</span></p>
+          </div>
+        </div>
+
         <div className="text-center mt-8 text-[13px] font-medium text-slate-400">
           <p>&copy; {new Date().getFullYear()} Faran Traders • Version 3.0</p>
         </div>
