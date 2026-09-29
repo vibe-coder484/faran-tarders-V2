@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../../components/Dashboard/DashboardLayout';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +23,80 @@ function Settings() {
       setLoading(false);
       toast.success('General preferences updated!');
     }, 800);
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportBackup = async () => {
+    try {
+      setExporting(true);
+      toast.info('Preparing database backup...');
+
+      const tables = [
+        'customers',
+        'suppliers',
+        'items',
+        'sales',
+        'sale_items',
+        'purchases',
+        'purchase_items',
+        'transactions',
+        'expenses',
+        'notifications',
+        'stock_logs'
+      ];
+
+      const backupData = {};
+      const counts = {};
+
+      for (const table of tables) {
+        try {
+          const { data, error } = await supabase.from(table).select('*');
+          if (error) {
+            console.warn(`Warning fetching ${table}:`, error.message);
+            backupData[table] = [];
+            counts[table] = 0;
+          } else {
+            backupData[table] = data || [];
+            counts[table] = data ? data.length : 0;
+          }
+        } catch (err) {
+          console.warn(`Error on table ${table}:`, err);
+          backupData[table] = [];
+          counts[table] = 0;
+        }
+      }
+
+      const totalRecords = Object.values(counts).reduce((a, b) => a + b, 0);
+
+      const exportPayload = {
+        appName: 'Faran Traders Management System',
+        exportedAt: new Date().toISOString(),
+        version: '1.0.0',
+        totalRecords,
+        tableCounts: counts,
+        data: backupData
+      };
+
+      // Create download link
+      const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+        JSON.stringify(exportPayload, null, 2)
+      )}`;
+      const downloadAnchor = document.createElement('a');
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadAnchor.setAttribute('href', jsonString);
+      downloadAnchor.setAttribute('download', `faran_traders_backup_${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      toast.success(`Backup exported successfully! (${totalRecords} records across ${tables.length} tables)`);
+    } catch (error) {
+      console.error('Backup error:', error);
+      toast.error('Failed to export backup: ' + error.message);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -134,8 +208,20 @@ function Settings() {
             Backup your business data regularly. You can download a complete snapshot of your current database state.
           </p>
           <div className="flex">
-            <button className="w-full sm:w-auto bg-emerald-600 text-white px-8 py-4 md:py-3.5 rounded-xl md:rounded-2xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all flex items-center justify-center gap-2">
-              <i className="fas fa-download text-sm"></i> Export Backup
+            <button 
+              onClick={handleExportBackup} 
+              disabled={exporting}
+              className="w-full sm:w-auto bg-emerald-600 text-white px-8 py-4 md:py-3.5 rounded-xl md:rounded-2xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
+            >
+              {exporting ? (
+                <>
+                  <i className="fas fa-spinner fa-spin text-sm"></i> Exporting...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-download text-sm"></i> Export Backup
+                </>
+              )}
             </button>
           </div>
         </div>

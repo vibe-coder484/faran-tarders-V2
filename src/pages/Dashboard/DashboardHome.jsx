@@ -7,82 +7,115 @@ import { useAuth } from '../../context/AuthContext';
 
 function DashboardHome() {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState([
+
+  // Helper to read initial cache for instant 0ms load
+  const getCachedData = () => {
+    try {
+      const cached = localStorage.getItem('ft_dashboard_cache');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const initialCache = getCachedData();
+  const [loading, setLoading] = useState(!initialCache);
+  const [syncing, setSyncing] = useState(false);
+
+  const [stats, setStats] = useState(initialCache?.stats || [
     { label: 'Total Receivable', val: '₨ 0', icon: 'fa-arrow-down', color: 'text-emerald-600', bg: 'bg-emerald-50', desc: 'Money to Receive' },
     { label: 'Total Payable', val: '₨ 0', icon: 'fa-arrow-up', color: 'text-rose-600', bg: 'bg-rose-50', desc: 'Money to Pay' },
-    { label: 'Net Cash', val: '₨ 0', icon: 'fa-wallet', color: 'text-indigo-600', bg: 'bg-indigo-50', desc: 'Net Balance' },
-    { label: 'Stock Value', val: '₨ 0', icon: 'fa-box', color: 'text-violet-600', bg: 'bg-violet-50', desc: 'Inventory Asset' }
+    { label: 'Net Balance', val: '₨ 0', icon: 'fa-wallet', color: 'text-indigo-600', bg: 'bg-indigo-50', desc: 'Receivable - Payable' },
+    { label: 'Stock Alerts', val: '0 Items', icon: 'fa-bell', color: 'text-violet-600', bg: 'bg-violet-50', desc: 'All Levels Healthy' }
   ]);
 
-  const [topCustomers, setTopCustomers] = useState([]);
-  const [topSuppliers, setTopSuppliers] = useState([]);
-  const [lowStock, setLowStock] = useState([]);
-  const [outOfStock, setOutOfStock] = useState([]);
+  const [topCustomers, setTopCustomers] = useState(initialCache?.topCustomers || []);
+  const [topSuppliers, setTopSuppliers] = useState(initialCache?.topSuppliers || []);
+  const [lowStock, setLowStock] = useState(initialCache?.lowStock || []);
+  const [outOfStock, setOutOfStock] = useState(initialCache?.outOfStock || []);
 
   const fetchData = async () => {
     try {
-      setLoading(true);
+      setSyncing(true);
 
-      // 1. Fetch Stats
-      const { data: custData } = await supabase.from('customers').select('current_balance');
-      const { data: suppData } = await supabase.from('suppliers').select('current_balance');
-      
-      const totalRec = (custData || []).reduce((sum, c) => sum + parseFloat(c.current_balance || 0), 0);
-      const totalPay = (suppData || []).reduce((sum, s) => sum + parseFloat(s.current_balance || 0), 0);
+      // Only 3 consolidated parallel queries instead of 7
+      const [
+        { data: customers, error: cErr },
+        { data: suppliers, error: sErr },
+        { data: items, error: iErr }
+      ] = await Promise.all([
+        supabase.from('customers').select('id, name, city, current_balance'),
+        supabase.from('suppliers').select('id, name, city, current_balance'),
+        supabase.from('items').select('id, name, category, unit, current_stock, min_stock_alert')
+      ]);
 
-      // 2. Fetch Stock Alerts
-      const { data: itemsData } = await supabase.from('items').select('id, current_stock, min_stock_alert');
-      const lowStockCount = (itemsData || []).filter(item => 
-        parseFloat(item.current_stock || 0) <= parseFloat(item.min_stock_alert || 10)
-      ).length;
+      if (cErr) console.warn('Customer query:', cErr.message);
+      if (sErr) console.warn('Supplier query:', sErr.message);
+      if (iErr) console.warn('Items query:', iErr.message);
 
-      setStats([
+      const custList = customers || [];
+      const suppList = suppliers || [];
+      const itemList = items || [];
+
+      // Calculate totals in-memory
+      const totalRec = custList.reduce((sum, c) => sum + parseFloat(c.current_balance || 0), 0);
+      const totalPay = suppList.reduce((sum, s) => sum + parseFloat(s.current_balance || 0), 0);
+
+      // In-memory stock calculations
+      const low = itemList.filter(item => {
+        const stock = parseFloat(item.current_stock || 0);
+        const minAlert = parseFloat(item.min_stock_alert || 10);
+        return stock > 0 && stock <= minAlert;
+      }).slice(0, 5);
+
+      const out = itemList.filter(item => parseFloat(item.current_stock || 0) <= 0).slice(0, 5);
+      const lowStockCount = low.length + out.length;
+
+      const newStats = [
         { label: 'Total Receivable', val: `₨ ${totalRec.toLocaleString()}`, icon: 'fa-arrow-down', color: 'text-emerald-600', bg: 'bg-emerald-50', desc: 'Money to Receive' },
         { label: 'Total Payable', val: `₨ ${totalPay.toLocaleString()}`, icon: 'fa-arrow-up', color: 'text-rose-600', bg: 'bg-rose-50', desc: 'Money to Pay' },
         { label: 'Net Balance', val: `₨ ${(totalRec - totalPay).toLocaleString()}`, icon: 'fa-wallet', color: 'text-indigo-600', bg: 'bg-indigo-50', desc: 'Receivable - Payable' },
         { label: 'Stock Alerts', val: `${lowStockCount} Items`, icon: 'fa-bell', color: lowStockCount > 0 ? 'text-rose-600' : 'text-violet-600', bg: lowStockCount > 0 ? 'bg-rose-50' : 'bg-violet-50', desc: lowStockCount > 0 ? 'Urgent Action Needed' : 'All Levels Healthy' }
-      ]);
+      ];
 
-      // 2. Fetch Top Customer (Highest Balance, > 0)
-      const { data: topCust } = await supabase
-        .from('customers')
-        .select('*')
-        .gt('current_balance', 0)
-        .order('current_balance', { ascending: false })
-        .limit(1);
-      setTopCustomers(topCust || []);
+      // In-memory top party sorting
+      const topCust = custList
+        .filter(c => parseFloat(c.current_balance || 0) > 0)
+        .sort((a, b) => parseFloat(b.current_balance || 0) - parseFloat(a.current_balance || 0))
+        .slice(0, 1);
 
-      // 3. Fetch Top Supplier (Highest Balance, > 0)
-      const { data: topSupp } = await supabase
-        .from('suppliers')
-        .select('*')
-        .gt('current_balance', 0)
-        .order('current_balance', { ascending: false })
-        .limit(1);
-      setTopSuppliers(topSupp || []);
+      const topSupp = suppList
+        .filter(s => parseFloat(s.current_balance || 0) > 0)
+        .sort((a, b) => parseFloat(b.current_balance || 0) - parseFloat(a.current_balance || 0))
+        .slice(0, 1);
 
-      // 4. Fetch Low Stock Items
-      const { data: lowItems } = await supabase
-        .from('items')
-        .select('*')
-        .gt('current_stock', 0)
-        .lte('current_stock', 10) // or compare with min_stock_alert if possible in SQL
-        .limit(5);
-      setLowStock(lowItems || []);
+      setStats(newStats);
+      setTopCustomers(topCust);
+      setTopSuppliers(topSupp);
+      setLowStock(low);
+      setOutOfStock(out);
 
-      // 5. Fetch Out of Stock Items
-      const { data: outItems } = await supabase
-        .from('items')
-        .select('*')
-        .lte('current_stock', 0)
-        .limit(5);
-      setOutOfStock(outItems || []);
-
+      // Save to cache for instant future loads
+      try {
+        localStorage.setItem(
+          'ft_dashboard_cache',
+          JSON.stringify({
+            stats: newStats,
+            topCustomers: topCust,
+            topSuppliers: topSupp,
+            lowStock: low,
+            outOfStock: out,
+            timestamp: Date.now()
+          })
+        );
+      } catch (cacheErr) {
+        console.warn('Cache save error:', cacheErr);
+      }
     } catch (error) {
       toast.error('Error loading dashboard: ' + error.message);
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   };
 
@@ -102,10 +135,10 @@ function DashboardHome() {
         </div>
         <button
           onClick={fetchData}
-          className="bg-white border border-slate-100 p-3 rounded-2xl text-slate-400 hover:text-indigo-600 hover:border-indigo-100 transition-all shadow-sm flex items-center justify-center"
+          className="bg-white border border-slate-100 p-3 rounded-2xl text-slate-400 hover:text-indigo-600 hover:border-indigo-100 transition-all shadow-sm flex items-center justify-center cursor-pointer"
           title="Refresh Data"
         >
-          <i className={`fas fa-sync-alt ${loading ? 'animate-spin' : ''}`}></i>
+          <i className={`fas fa-sync-alt ${syncing ? 'animate-spin text-indigo-600' : ''}`}></i>
         </button>
       </div>
 

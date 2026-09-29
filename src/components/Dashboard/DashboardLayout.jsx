@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Sidebar from './Sidebar';
 import TopNav from './TopNav';
 import PageTransition from '../PageTransition';
+import FloatingCalculator from './FloatingCalculator';
 
 function DashboardLayout({ children, pageTitle }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -31,6 +32,9 @@ function DashboardLayout({ children, pageTitle }) {
           </PageTransition>
         </main>
       </div>
+
+      {/* Global Floating Calculator for Faran Traders */}
+      <FloatingCalculator />
     </div>
   );
 }

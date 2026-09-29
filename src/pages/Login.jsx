@@ -23,8 +23,25 @@ function Login() {
     setLoading(true);
 
     try {
+      let loginEmail = username.trim();
+
+      // If user entered username instead of email, find corresponding email in users table
+      if (!loginEmail.includes('@')) {
+        const { data: userRecord } = await supabase
+          .from('users')
+          .select('email')
+          .eq('username', loginEmail)
+          .maybeSingle();
+
+        if (userRecord?.email) {
+          loginEmail = userRecord.email;
+        } else {
+          loginEmail = `${loginEmail}@gmail.com`;
+        }
+      }
+
       const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: username,
+        email: loginEmail,
         password: password,
       });
 
@@ -112,12 +129,17 @@ function Login() {
           </button>
         </form>
 
-        <div className="mt-6 bg-indigo-50/80 border border-indigo-100 p-4 rounded-2xl text-center animate-[slideUp_0.8s_ease-out]">
-          <p className="text-sm text-indigo-800 font-semibold mb-1">For login use</p>
-          <div className="text-sm text-indigo-600 font-medium space-y-1">
-            <p>Email: <span className="font-bold text-indigo-700 select-all">admin@gmail.com</span></p>
-            <p>Password: <span className="font-bold text-indigo-700 select-all">admin123</span></p>
-          </div>
+        <div className="mt-6 bg-indigo-50/80 border border-indigo-100 py-2.5 px-4 rounded-2xl text-center animate-[slideUp_0.8s_ease-out] flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs sm:text-sm text-indigo-800">
+          <span className="font-bold text-indigo-900 flex items-center gap-1.5">
+            <i className="fas fa-info-circle text-indigo-500 text-xs"></i> For login use:
+          </span>
+          <span className="text-indigo-600">
+            Email: <span className="font-bold text-indigo-800 select-all">admin@gmail.com</span>
+          </span>
+          <span className="text-indigo-300 hidden sm:inline">•</span>
+          <span className="text-indigo-600">
+            Password: <span className="font-bold text-indigo-800 select-all">admin123</span>
+          </span>
         </div>
 
         <div className="text-center mt-8 text-[13px] font-medium text-slate-400">
